@@ -1,0 +1,15 @@
+Les liste tirés des données du Mans sont dans `data/secteurs` et portent des noms finissant par `_pre.csv`.
+
+Ces listes sont à passer une par une ici : http://www.gpsfrance.net/liste-adresses-vers-coordonnees-gps
+
+Le fichier résultant (csv) doit être enregistré puis le script `csv2geojson_sect.py` est appellé dessus via :
+
+	$ ./csv2geojson_sect fichier_csv fichier_json
+
+Ensuite, on ajoute un calque à la carte, on y importe les données GeoJSON (**ne pas importer dans le calque `save`), on
+trace un polygon autour des marqueurs (ignorer ceux qui sont trop loin), on fait attention que le poly **soit dans le
+calque `save`**. Une fois le poly tracé, on supprime le calque où les données ont été importées. Peut importe que les
+poly se chevauchent, on verra ça plus tard : il faut entourer les points au mieux en essayant de suivre des rues. Ouvrez
+un nouveau ticket à chaque secteur tracé et pensez à mettre le numéro du secteur dans le champ "name" du polygone.
+
+Merci !
