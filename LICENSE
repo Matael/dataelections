@@ -1,0 +1,20 @@
+Les fichiers du répertoire data/ sont délivrés par Le Mans Métropole sous license ODbL : http://opendatacommons.org/licenses/odbl/summary/
+
+Les autres fichiers du répertoire data et de ses sous-répertoires sont aussi accessible sous les conditions de cette
+license. Aucune license n'étant spécifiée quant aux données du scrutin, nous utiliserons la license ODbL pour ces
+données égalements.
+
+Les scripts (.py et .sh) sont eux sous la license suivante (GNU/GPL v3) :
+
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
