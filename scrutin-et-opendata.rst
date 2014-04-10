@@ -157,10 +157,125 @@ chacun des candidats en lice. On crée alors une hashmap liant les candidats (nu
 Emplacements des bureaux de vote
 ================================
 
-geocoding
+Le Mans n'est pas connu pour sa brillante politique OpenData... en effet, et j'en avais déjà `disserté ici`_, les
+données sont disponibles sous forme de zip, après validation d'une license et sous des URLs qui rendent la procédure pas
+automatisable.
+
+On récupère donc un fichier zip à l'adresse suivante : http://www.lemans.fr/page.do?t=2&uuid=10A48915-550EA533-1F82E3AA-D697BAF8
+
+Après décompression on ne conserve que le fichier ``csv/BUREAUX_VOTE.csv`` et on va chercher les colonnes ``COMMUNE``,
+``ADRRESSE`` et ``SECTEURS``. On redécoupe la dernière pour exporter les numéros de secteurs uniquement et on extrapole
+le code postal depuis la première... Ça nous donne le script suivant :
+
+.. sourcecode:: python
+
+
+    import csv
+    import json
+
+    # Extraction des données des fichiers "Opendata" du mans.
+    #
+    # On cherche à afficher toutes les addresses pour pouvoir
+    # ensuite les passer en bloc à un geocodeur
+
+    filename = "data/BUREAUX_VOTE.csv"
+
+    with open(filename) as f:
+        reader = csv.reader(f, delimiter=";")
+        reader.next()
+
+        crossref_bureaux_oldaddr = {}
+        error_count = 0
+        for l in reader:
+            if l[3] == 'Le Mans': # extrapol. du CP
+                cp = 72000
+            else: error_count += 1
+            addr_str = "{}, {} {}, France".format(l[6],cp,l[3]) # formattage de l'addresse complète
+
+            # transfor. du champ SECTEURS en liste
+            crossref_bureaux_oldaddr[addr_str.decode('latin-1')] = [int(_) for _ in l[10].split(':')[1].split(',')]
+            print(addr_str)
+
+
+    print("\n\nErrors : {}".format(error_count))
+
+    # sauvegarde des crossref
+    savefile = 'data/crossref.json'
+    print('Saving crossref file to {}...'.format(savefile))
+    with open(savefile, 'w') as f:
+        f.write(json.dumps(crossref_bureaux_oldaddr))
+
+On exporte aussi le dictionnaire de références croisées pour l'utiliser plus tard.
+
+Geocoding
 ---------
-lien bureau - résultats
+
+Pour pouvoir les placer sur un fond de carte, il faut ensuite convertir ces adresses postales en coordonnées GPS.
+Pour cela, on utilisera le site suivant_ (merci à eux d'ailleurs, on a joyeusement poutré leur quota...).
+
+On récupère alors un csv de la forme :
+
+.. sourcecode:: csv
+
+    lat;lon;adresse utilisée;adresse fournie
+
+De ce csv, on sort les coordonées que l'on lie, via le dictionnaire de crossref aux secteurs :
+
+.. sourcecode:: python
+
+    import sys
+
+    import csv
+    import json
+
+    from config import tour
+
+    # Création d'un GeoJson propre
+    #
+    # Ce script fait suite à extract_OD.py, il prend les données
+    # renvoyées par le geocodeur et les transforme en liste de Features
+    # GeoJSOn traçables sur une map
+
+    # fichier retourné par le geocodeur
+    filename = "data/bureaux_vote_coords.csv"
+
+    # on charge le fichier de crossref
+    print('Loading crossref from data/crossref.json')
+    try:
+        with open('data/crossref.json') as f:
+            crossref_bureaux_oldaddr = json.load(f)
+    except IOError:
+        print('data/crossref.json not found...\nPlease run extract_OD.py before')
+        sys.exit(0)
+
+    # lecture du CSV et création d'un GeoJSON importable
+    geolist = []
+    with open(filename) as f:
+        reader = csv.reader(f,delimiter=";")
+        for l in reader:
+            geolist.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [l[1], l[0]]
+                    },
+                    "properties": {
+                        "name": "Bureau de vote",
+                        "secteurs": ','.join(map(str,crossref_bureaux_oldaddr[l[3].decode('utf-8')]))
+                    }
+                }
+            )
+
+    # sauvegarde de la liste des bureaux de vote
+    savefile = "data/bureaux_vote_coords.json"
+    print('Saving GeoJSON list to {}...'.format(savefile))
+    with open(savefile,'w') as f:
+        f.write(json.dumps(geolist))
+
+Lien bureau - résultats
 -----------------------
+
 
 Secteurs de vote
 ================
@@ -186,3 +301,5 @@ Et maintenant ?
 .. _feedoo: twitter
 .. _premier tour: http://extra.lemans.fr/elections/premier_tour/
 .. _script: http://extra.lemans.fr/elections/premier_tour/soluvote.js
+.. _disserté ici: article opendata
+.. _suivant: http://www.gpsfrance.net/liste-adresses-vers-coordonnees-gps
