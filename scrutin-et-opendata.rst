@@ -5,19 +5,19 @@ Scrutin et OpenData : parlons technique...
 Un calvaire de données pour une action citoyenne :: opendata, LeMans, haum, python
 ----------------------------------------------------------------------------------
 
-Ce n'est pas la première fois que je m'attaque aux données du Mans. La fois dernière, c'est les données de la SETRAM_
+Ce n'est pas la première fois que je me penche sur les données du Mans. La fois dernière, c'est les données de la SETRAM_
 qui m'intéressaient, cette fois ci, il s'agit des données électorales.
 
 Avant de commencer, sachez que tous les scripts utilisés pour cette exploitation des données sont disponibles sur un
-`dépôt Github`_. Au long de cet article, nous essaierons de comprendre le fonctionnement des scripts. Sachez d'avance
+`dépôt Github`_. Au long de cet article, nous essaierons de comprendre le fonctionnement desdits scripts. Sachez d'avance
 qu'ils sont plus simples que ceux pour la SETRAM.
 
 Données du Scrutin
 ==================
 
 Puisque nous cherchons à analyser la dernière élection, il nous faut les données du scrutin avec la meilleure
-granularité possible. Pour nous, ce sera les données du vote classées par secteur. Ces données là ne sont pas simples à
-trouver (et un grand merci à feedoo_ pour le lien), elles sont sur un site qui semble dédié à ça :
+granularité possible. Pour nous, ce sera les données du vote classées par secteurs. Ces données là ne sont pas simples à
+trouver (et un grand merci à feedoo_ pour le lien), elles sont sur un site qui semble plus ou moins dédié à ça :
 http://extra.lemans.fr/elections/ .
 
 Si vous cherchez à analyser la source de la page du `premier tour`_ en version "classique", vous serez peut être un peu
@@ -43,8 +43,9 @@ notamment :
 
 Ces lignes nous donnent l'envie de tester l'ajout de quelques bouts de chemin à l'URL :
 
-- l'ajout de ``/xml/`` nous permet de voir qu'il est interdit de lister les fichiers
-- si on ajoute ``/xml/Election.xml`` (en laissant tomber la date mise dans le script) on arrive à un fichier XML qui
+- l'ajout de ``/xml/`` nous permet de voir qu'il est interdit de lister les fichiers dans un dossier qui toutefois
+  existe
+- si on ajoute ``/xml/Election.xml`` (en laissant tomber la date ajoutée dans le script) on arrive à un fichier XML qui
   semble être une table de correspondance entre les différents bureaux (qui sont en fait les secteurs) et les résultats
   qui leurs sont associés.
 - enfin, en ajoutant ``/xml/`` et un des champs ``fichier`` du ``Election.xml``, on obtient les résultats de vote liste
@@ -56,7 +57,7 @@ Configuration générale
 ----------------------
 
 Le fichier ``config.py`` contient le nom du tour électoral d'intérêt, la liste des listes engagées au tour et la liste
-des couleurs associée à chaque liste électorale (nous verrons pourquoi).
+des différentes couleurs associées à chaque liste électorale (nous verrons pourquoi).
 
 Ainsi, ``config.py`` ressemble à :
 
@@ -149,9 +150,9 @@ et ça a facilité les choses. Ainsi, le script s'écrit simplement (``scrap_scr
 Le début et la fin du script sont respectivement la récupération d'une liste des bureaux de vote et la sauvegarde des
 résultats dans un fichier (mise en cache pour plus tard).
 
-La boucle, elle, se content d'itérer sur les différents bureaux et pour chacun des bureaux de regarder les champs ``num``
+La boucle, elle, se contente d'itérer sur les différents bureaux et pour chacun des bureaux de regarder les champs ``num``
 d'une part (pour pouvoir les relier aux secteurs ensuite) et ``fichier`` d'autre part. Connaissant ainsi le nom du
-fichier xml de résultats pour le bureau, on fait une nouvelle requête pour le récupérer et on en extrait les score de
+fichier xml de résultats pour le bureau, on fait une nouvelle requête pour le récupérer et on en extrait les scores de
 chacun des candidats en lice. On crée alors une hashmap liant les candidats (numéro de liste uniquement) à leur score.
 
 Emplacements des bureaux de vote
@@ -213,13 +214,17 @@ Geocoding
 Pour pouvoir les placer sur un fond de carte, il faut ensuite convertir ces adresses postales en coordonnées GPS.
 Pour cela, on utilisera le site suivant_ (merci à eux d'ailleurs, on a joyeusement poutré leur quota...).
 
+    **Remarque**
+    Le processus visant à passer d'adresse postales aux coordonnées GPS s'appelle Geocoding (ou parfois geocodage en
+    français).
+
 On récupère alors un csv de la forme :
 
 .. sourcecode:: csv
 
     lat;lon;adresse utilisée;adresse fournie
 
-De ce csv, on sort les coordonées que l'on lie, via le dictionnaire de crossref aux secteurs :
+De ce csv, on sort les coordonnées que l'on lie, via le dictionnaire de *crossref* aux secteurs :
 
 .. sourcecode:: python
 
@@ -276,30 +281,195 @@ De ce csv, on sort les coordonées que l'on lie, via le dictionnaire de crossref
 Lien bureau - résultats
 -----------------------
 
+Après avoir récupéré d'une part la liste des bureaux de vote et leur localisation, et d'autre part les résultats par
+secteurs, il est temps de rassembler tout ça. On réimporte pour cela les données du scrutin et les coordonnées des
+bureaux et on les triture.
+
+.. sourcecode:: python
+
+    import json
+
+    from config import listes, colors, tour
+
+    # données du scrutin
+    print('Loading poll data...')
+    with open('data/{}.json'.format(tour)) as f:
+        bureaux = json.load(f)
+        bureaux = {int(k):v for k,v in bureaux.items()}
+
+    # coordonnées des bureaux
+    print('Loading coords of offices')
+    geo_filename = "data/bureaux_vote_coords.json"
+    with open(geo_filename) as f:
+        geolist = json.load(f)
+
+    # ajout des résultats
+    for i in range(len(geolist)):
+        # on itère sur les bureaux
+
+        data_files = geolist[i]['properties']['secteurs']
+        # on crée un dico avec le bon nombre de liste et 0% à chacune
+        results = {_+1:0 for _ in range(len(listes[tour]))}
+
+        # on récupère les secteurs liés au bureau courant
+        secteurs = map(int, data_files.split(','))
+
+        # regroupement de plusieurs secteurs sur un bureau
+        for num in secteurs:
+            for k,v in bureaux[num].items(): results[int(k)] += v
+
+        # normalisation par le nombre de secteurs regroupés
+        for k,v in results.items():
+            geolist[i]['properties'][listes[tour][k]] = "{} %".format(v/len(secteurs))
+
+    # sauvegarde
+    savefile = "data/bureaux_vote_results_{}.json".format(tour)
+    print('Saving to {}...'.format(savefile))
+    with open(savefile,'w') as f:
+        f.write(json.dumps(geolist))
+
+
+Lorsque le fichier résultant est importé dans OSM, on se retrouve avec les premier et second tours par bureaux tels
+qu'affichés sur `cette carte`_.
 
 Secteurs de vote
 ================
 
+Un aspect plus significatif (en tout cas plus visuel) est apporté par la visualisation des secteurs colorés en fonction
+de divers critères (majoritaire, abstention, etc...).
+
+De notre côté, le tracé des secteurs eux mêmes sur une carte fut compliqué. Voyons pourquoi...
+
 Aspect des données brutes
 -------------------------
-Partition sectorielle
----------------------
-Geocoding a la mano
--------------------
-Passage en GeoJSON
-------------------
+
+Les données "brutes" fournies par la ville se présentent sous la forme du "pack" `Voies par secteurs`_. Dans ce pack, on
+retrouve plusieurs fichiers dont un nous sera utile : ``VOIES_PAR_BUREAU_VOTE.csv``.
+
+Le fichier CSV se présente avec le format suivant :
+
+.. sourcecode:: csv
+
+    RIVOLI;VOIE;MINIMUM_PAIR;MAXIMUM_PAIR;MINIMUM_IMPAIR;MAXIMUM_IMPAIR;NUM_BV;BUREAU_DE_VOTE
+
+Nous avons alors procédé ainsi :
+
+- pour chaque secteur (bureau ici) et chaque rue, on isole les adresses avec les plus grands et plus petits numéros
+- on en fait un CSV geocodable sur le site habituel
+- on fait des données en sortie un json importable dans OSM (via le script ``csv2geojson_sect.py``)
+- on trace un polygone autour à la main
+- on vérifie avec une carte "officielle" qui nous a été fournie (mais qui n'est pas assez précise pour être directement
+  exploitable)
+- on recommence pour le suivant.
+
+C'est ainsi que nous perdîmes (feedoo_ et moi-même) quelques soirées à tracer des secteurs sur une carte...
+
+
+    **Remarque**
+
+    Certains objecterons que nous aurions pu utiliser une API pour le geocodage, c'est vrai, mais pas forcément plus
+    simple.
+
 Tracé sur la map et export
 --------------------------
+
+Une fois les 97 polygones correspondants aux secteurs de vote tracés, nous pouvons réexporter l'ensemble des *features*
+dans un fichier GeoJSON.
+
+Vient alors l'exploitation de ce fichier pour y ajouter nos données des scrutins.
+
 Ajout de résultats et de la couleur
 -----------------------------------
+
+Pour l'ajout des résultats, il faut savoir que le script est très semblable à celui pour l'approche "par bureau" :
+
+.. sourcecode:: python
+
+    import json
+
+    from config import listes, colors, tour
+
+    # d'abord, on lit la liste des secteurs et on en fait un truc utilisable.
+    sect_filename = "data/secteurs.json"
+    with open(sect_filename) as f:
+        tmp = json.load(f)
+        # on veut un hash : numéro du secteur => liste de coords
+        map_secteurs = {int(_['properties']['name'].split(' ')[1]):_['geometry']['coordinates'] for _  in tmp['features']}
+
+    # chargement des données du vote
+    print('Loading poll data...')
+    with open('data/{}.json'.format(tour)) as f:
+        bureaux = json.load(f)
+        bureaux = {int(k):v for k,v in bureaux.items()}
+
+
+    # on crée un objet GeoJSON vide
+    geolist = {"type": "FeatureCollection", "features": []}
+
+    for s in map_secteurs.keys():
+        # pour chaque secteur, on crée une feature polygonale avec
+        # les bonnes coordonnées et le nom du secteur
+        new_feature = {
+            'type': 'Feature',
+            'geometry': {
+                'type': 'Polygon',
+                'coordinates': map_secteurs[s]
+            },
+            'properties': {
+                '_storage_options': {},
+                'name': 'Secteur {}'.format(s)
+            }
+        }
+
+        # on extrait des résultats du vote les données
+        # du secteur concerné
+        res = bureaux[s]
+        res = {int(k):int(v) for k,v in res.items()}
+
+        # couleur du secteur
+        # on trie les candidats par pourcentage de voies décroissant
+        res_sortedkeys = sorted(res, key=res.get, reverse=True)
+        # on prend le premier élément et on choisit la couleur en fonction
+        # de qui il/elle est
+        color = colors[tour][res_sortedkeys[0]]
+        new_feature['properties']['_storage_options']['color'] = color
+
+        # ajout du score de chacun
+        for k,v in res.items():
+            new_feature['properties'][listes[tour][k]] = "{} %".format(v)
+
+        # ajout à la liste
+        geolist['features'].append(new_feature)
+
+    # sauvegarde
+    savefile = "data/secteurs_results_{}.json".format(tour)
+    print('Saving to {}...'.format(savefile))
+    with open(savefile,'w') as f:
+        f.write(json.dumps(geolist))
+
+Et voilà pour les secteurs ! Le résultat est aussi visible sur certains des *layers* de `cette carte`_.
 
 Et maintenant ?
 ===============
 
-.. _SETRAM: article
-.. _dépôt Github:
-.. _feedoo: twitter
+Maintenant, il reste plein de choses à faire.
+
+Tout d'abord, vous l'aurez compris, l'accès aux données n'est pas aisé du tout.
+De plus les données "OpenData" sur Le Mans ne sont pas forcément très à jour (elles datent, pour celles utilisées ici, de
+2012). Elle ne sont pas non plus complètes : en effet, sans la carte fournie de l'intérieur, certains secteurs auraient été très faux...
+
+Passé tout cela, il reste que pour que ces données prennent tout leur sens, il faudrait les contextualiser, observer les
+résultats de précédents scrutins, croiser avec des données démographiques, avec des données concernant la vie sociale,
+culturelle et sportive, etc... bref, les replacer dans leur contexte global.
+
+De ce côté là, il reste encore beaucoup de boulot.
+
+.. _SETRAM: /writing/cyber-ouvre-boite-opendata-ou-pas/
+.. _dépôt Github: https://github.com/Matael/dataelections
+.. _feedoo: https://twitter.com/fblain
 .. _premier tour: http://extra.lemans.fr/elections/premier_tour/
 .. _script: http://extra.lemans.fr/elections/premier_tour/soluvote.js
-.. _disserté ici: article opendata
+.. _disserté ici: /writing/opendata-au-mans/
 .. _suivant: http://www.gpsfrance.net/liste-adresses-vers-coordonnees-gps
+.. _cette carte: http://umap.openstreetmap.fr/fr/map/le-mans-elections_6485
+.. _voies par secteurs:  http://www.lemans.fr/page.do?t=2&uuid=F800DD7B-550EA533-37695DD8-0C16AF0E
